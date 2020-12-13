@@ -5,6 +5,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
+
+	"github.com/soheilhy/cmux"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	pb "github.com/KarasWinds/tag-service/proto"
 	"github.com/KarasWinds/tag-service/server"
@@ -12,38 +17,43 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-var grpcPort string
-var httpPort string
+var port string
 
 func init() {
-	flag.StringVar(&grpcPort, "grpc_port", "8001", "gRPC啟動通訊埠")
-	flag.StringVar(&httpPort, "http_port", "9001", "http啟動通訊埠")
+	flag.StringVar(&port, "port", "8004", "啟動通訊埠")
 	flag.Parse()
 }
 
 func main() {
-	errs := make(chan error)
-	go func() {
-		err := RunHttpServer(httpPort)
-		if err != nil {
-			errs <- err
-		}
-	}()
+	l, err := RunTCPServer(port)
+	if err != nil {
+		log.Fatalf("Run TCP Server err: %v", err)
+	}
 
-	go func() {
-		err := RunGrpcServer(grpcPort)
-		if err != nil {
-			errs <- err
-		}
-	}()
-	log.Printf("Server start")
-	select {
-	case err := <-errs:
-		log.Fatalf("Run Server err : %v", err)
+	m := cmux.New(l)
+	grpcL := m.MatchWithWriters(
+		cmux.HTTP2MatchHeaderFieldPrefixSendSettings(
+			"content-type",
+			"application/grpc",
+		),
+	)
+	httpL := m.Match(cmux.HTTP1Fast())
+	grpcS := RunGrpcServer()
+	httpS := RunHttpServer(port)
+	go grpcS.Serve(grpcL)
+	go httpS.Serve(httpL)
+
+	err = m.Serve()
+	if err != nil {
+		log.Fatalf("Run Serve err: %v", err)
 	}
 }
 
-func RunHttpServer(port string) error {
+func RunTCPServer(port string) (net.Listener, error) {
+	return net.Listen("tcp", ":"+port)
+}
+
+func RunHttpServer(port string) *http.Server {
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc(
 		"/ping",
@@ -52,17 +62,26 @@ func RunHttpServer(port string) error {
 		},
 	)
 
-	return http.ListenAndServe(":"+port, serveMux)
+	return &http.Server{
+		Addr:    ":" + port,
+		Handler: serveMux,
+	}
 }
 
-func RunGrpcServer(port string) error {
+func RunGrpcServer() *grpc.Server {
 	s := grpc.NewServer()
 	pb.RegisterTagServiceServer(s, server.NewTagServer())
 	reflection.Register(s)
-	lis, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		return err
-	}
 
-	return s.Serve(lis)
+	return s
+}
+
+func grpcHandlerFunc(grpcServer *grpc.Server, otherHandler http.Handler) http.Handler {
+	return h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Context-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			otherHandler.ServeHTTP(w, r)
+		}
+	}), &http2.Server{})
 }
