@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"path"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -15,8 +16,10 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
+	"github.com/KarasWinds/tag-service/pkg/swagger"
 	pb "github.com/KarasWinds/tag-service/proto"
 	"github.com/KarasWinds/tag-service/server"
+	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -54,10 +57,29 @@ func runHttpServer() *http.ServeMux {
 		},
 	)
 
+	prefix := "/swagger-ui/"
+	fileServer := http.FileServer(&assetfs.AssetFS{
+		Asset:    swagger.Asset,
+		AssetDir: swagger.AssetDir,
+		Prefix:   "third_party/swagger-ui",
+	})
+	serveMux.Handle(prefix, http.StripPrefix(prefix, fileServer))
+	serveMux.HandleFunc("/swagger/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "swagger.json") {
+			http.NotFound(w, r)
+			return
+		}
+
+		p := strings.TrimPrefix(r.URL.Path, "/swagger/")
+		p = path.Join("proto", p)
+
+		http.ServeFile(w, r, p)
+	})
 	return serveMux
 }
 
 func runGrpcServer() *grpc.Server {
+
 	s := grpc.NewServer()
 	pb.RegisterTagServiceServer(s, server.NewTagServer())
 	reflection.Register(s)

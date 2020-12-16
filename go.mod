@@ -3,6 +3,8 @@ module github.com/KarasWinds/tag-service
 go 1.15
 
 require (
+	github.com/elazarl/go-bindata-assetfs v1.0.1
+	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/golang/protobuf v1.4.3
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/soheilhy/cmux v0.1.4
@@ -12,4 +14,5 @@ require (
 	google.golang.org/grpc v1.34.0
 	google.golang.org/grpc/examples v0.0.0-20201212000604-81b95b1854d7 // indirect
 	google.golang.org/protobuf v1.25.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
