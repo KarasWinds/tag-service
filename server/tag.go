@@ -16,6 +16,7 @@ func NewTagServer() *TagServer {
 }
 
 func (t *TagServer) GetTagList(ctx context.Context, r *pb.GetTagListRequest) (*pb.GetTagListReply, error) {
+	// panic("測試拋出例外~")
 	api := bapi.NewAPI("http://127.0.0.1:8000")
 	body, err := api.GetTagList(ctx, r.GetName())
 	if err != nil {
